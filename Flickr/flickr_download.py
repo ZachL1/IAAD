@@ -1,5 +1,9 @@
 import flickrapi
 import json
+import os
+
+os.environ['http_proxy'] = 'http://172.23.192.1:7890'
+os.environ['https_proxy'] = 'http://172.23.192.1:7890'
 
 api_key = '00258f9effd82b57b188e8e27de18f1f'
 api_secret = '8d9d1c075f25d892'
