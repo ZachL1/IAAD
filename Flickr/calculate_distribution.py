@@ -1,156 +1,90 @@
-import flickrapi
+import argparse
+import pickle
 import json
 import os
-import pickle
-from django.core.cache import cache
-import urllib.request
-import urllib.error
-import random
+import numpy as np
+import time
+import matplotlib.pyplot as plt
+from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor
+from glob import glob
 
-api_key = '00258f9effd82b57b188e8e27de18f1f'
-api_secret = '8d9d1c075f25d892'
+parser = argparse.ArgumentParser()
+parser.add_argument('--file', default='IAAD/Flickr/yfcc2m_annos_all.json', type=str, help='annotations json file to calculate')
+parser.add_argument('--base-dir', '--base_dir', default='/media/dji/新加卷/zach_data', type=str, help='base dir of datasets')
+args = parser.parse_args()
 
-flickr = flickrapi.FlickrAPI(api_key, api_secret, format='json', cache=True)
-# flickr.cache = cache
-
-# extras = ['description', 'license', 'owner_name', 'targs', 'machine_tags', 'views', 'media']
-# extras = 'description, license, owner_name, targs, machine_tags, views, media, geo, url_c'
-# r = flickr.interestingness.getList(date='2022-04-11', extras=extras, per_page='500', page=1)
-# r_json = json.loads(r.decode('utf-8'))
-# raw_info_list = r_json['photos']
-
-base_dir = '/media/dji/新加卷/zach_data/'
-base_len = len(base_dir)
-
+base_len = len(args.base_dir) + 1
 def abs2rela(abs_path: str):
     return abs_path[base_len:]
 
-def save_meta(save_path:str, meta:dict):
-    save_dir = os.path.dirname(save_path)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+def move_to(old:str, new:str):
+    new_dir = os.path.dirname(new)
+    if not os.path.exists(new_dir):
+        os.makedirs(new_dir)
+    os.rename(os.path.join(args.base_dir, old), os.path.join(args.base_dir, new))
 
-    with open(save_path, 'wb') as f:
-        pickle.dump(meta, f)
-
-def get_photo_info(id, retry=3):
-    if retry <= 0:
-        print('continue in ', id)
-        return None
-    try:
-        info_raw = flickr.photos.getInfo(photo_id=id)
-        info = json.loads(info_raw.decode('utf-8'))
-        if info['stat'] != 'ok':
-            print('[FAIL] when getInfo get ', info)
-            print('continue in ', id)
-            return None
-        photo_info = info['photo']
-
-        fav_raw = flickr.photos.getFavorites(photo_id=id, page=1, per_page=1)
-        fav = json.loads(fav_raw.decode('utf-8'))
-        if fav['stat'] != 'ok':
-            print('[FAIL] when getFavorites get ', info)
-            print('continue in ', id)
-            return None
-        photo_info.update({'favorites': fav['photo']['total']})
-    except flickrapi.FlickrError as e:
-        print('[except] when getInfo/Favorites get except: ', e)
-        print(f'Retry {retry} times more')
-        return get_photo_info(id, retry-1)
-
-    return photo_info
-
-def save_rgb(rgb_link:str, rgb_file:str, timeout=10, retry=3):
-    if retry <= 0:
-        print('continue in ', rgb_link)
-        return None
-    try:
-        save_dir = os.path.dirname(rgb_file)
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-
-        r = urllib.request.urlopen(rgb_link, timeout=timeout)
-        with open(rgb_file, 'wb') as f:
-            f.write(r.read())
-            f.close()
-    except urllib.error.HTTPError as e:
-        print('[except] when save rgb get except: ', e)
-        save_rgb(rgb_link, rgb_file, retry=retry-1)
-    except urllib.error.URLError as e:
-        print('[except] when save rgb get except: ', e)
-        save_rgb(rgb_link, rgb_file, retry=retry-1)
-    except IOError as e:
-        print('[except] when save rgb get except: ', e)
-        save_rgb(rgb_link, rgb_file, retry=0)
-
-    return True
-
-
+cnt = np.zeros([101])
 files = {}
-def get_metadata(id_list:list):
-    for id in id_list:
-        photo_info = get_photo_info(id)
-        if photo_info is None:
+
+def pick_handler(year:str, picks:list):
+    # sub_cnt = np.zeros([101])
+    for pick in tqdm(picks):
+        pick_path = os.path.join(args.base_dir, pick)
+        new_pick_path = pick_path
+        
+        if not os.path.exists(pick_path):
+            pick_path = glob(pick_path.replace('.pkl', '*.pkl'))[0]
+
+        new_rgb_path = rgb_path = None
+        with open(pick_path, 'rb+') as f:
+            meta_info = pickle.load(f)
+            post_year = time.ctime(int(meta_info['dates']['posted']))[-4:]
+            if year != post_year:
+                new_pick_path = pick_path.replace(f'/{year}/', f'/{post_year}/')
+                rgb_path = meta_info['rgb']
+                new_rgb_path = rgb_path.replace(f'/{year}/', f'/{post_year}/')
+                meta_info['rgb'] = new_rgb_path
+                pickle.dump(meta_info, f)
+        
+        favorites = int(meta_info['favorites']) + 1
+        views = int(meta_info['views']) + 1
+        if views <= 1:
             continue
+        else:
+            sorce = np.log(favorites)/np.log(views)
+        cnt[int(sorce*100)] += 1
 
-        server = photo_info['server']
-        id = photo_info['id']
-        secret = photo_info['secret']
-        taken_year = photo_info['dates']['taken'][:4] # TODO: just str year?
-        rgb_file = f'{base_dir}yfcc1m/rgb/{taken_year}/{id}_{secret}_b.jpg'
-        meta_file = f'{base_dir}yfcc1m/meta/{taken_year}/{server}_{id}_{secret}.pkl'
-        url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
-        photo_info.update({'rgb': abs2rela(rgb_file)})
-        photo_info.update({'url_b': url})
+        if rgb_path is not None and new_rgb_path is not None:
+            move_to(rgb_path, new_rgb_path)
 
-        if save_rgb(url, rgb_file) is None:
-            continue
-        save_meta(meta_file, photo_info)
-
-        # with open(f'{base_dir}yfcc1m/rgb/{taken_year}/annos_all_year.txt', 'a') as f:
-        #     f.write(abs2rela(meta_file) + '\n')
-        if taken_year not in files.keys():
-            files[taken_year] = []
-        files[taken_year].append(abs2rela(meta_file))
-    print('great work! 10000 done!')
-    with open('done_id.txt', 'a') as f:
-        for id in id_list:
-            f.write(id + '\n')
+        new_pick_path = new_pick_path.replace('.pkl', f'_{meta_info["favorites"]}_{meta_info["views"]}.pkl')
+        move_to(pick_path, new_pick_path)
+        if post_year not in files.keys():
+            files[post_year] = []
+        files[post_year].append(abs2rela(new_pick_path))
+        
+    # global cnt
+    # cnt += sub_cnt
+    print(f'{year} year done!')
 
 
 
-yfcc1m_list = '/home/dji/IAA/data/YFCC15M/yfcc100m_subset_data.tsv'
-yfcc1m_shuffle_list = '/home/dji/IAA/data/YFCC15M/yfcc100m_subset_data_shuffle.txt'
-yfcc1m_id = []
-# with open(yfcc1m_list, 'r') as f:
-#     for line in f:
-#         id = line.strip().split()[1]
-#         yfcc1m_id.append(id)
-# random.shuffle(yfcc1m_id)
-# with open(yfcc1m_list.replace('.tsv', '_shuffle.txt'), 'w') as f:
-#     for id in yfcc1m_id:
-#         f.write(id+'\n')
+with open(args.file, 'r') as f:
+    annos = json.load(f)
 
-with open(yfcc1m_shuffle_list, 'r') as f:
-    for line in f:
-        id = line.strip()
-        yfcc1m_id.append(id)
-        if len(yfcc1m_id) >= 2000000:
-            break
+all_picks = []
+# with ThreadPoolExecutor(max_workers=1) as pool:
+for year, picks in annos['files'].items():
+    pick_handler(year, picks)
+        # all_picks = all_picks + picks
+        # pool.submit(pick_handler, year, picks)
 
-for sub_i in range(2):
-    subset = yfcc1m_id[sub_i*1000000:(sub_i+1)*1000000]
-    with ThreadPoolExecutor(max_workers=20) as pool:
-        for subsub_i in range(100):
-            pool.submit(get_metadata, subset[subsub_i*10000:(subsub_i+1)*10000])
+# pick_handler('2000', all_picks)
+print(cnt)
+import matplotlib.pyplot as plt
+plt.bar(range(len(cnt)), cnt)
+plt.savefig('bar.png')
 
-    print('great great work!!! 1M done!!!')
-
-
-
-
-
-with open('yfcc2m_annos_all.json', 'w') as f:
-    print('all year: ', len(files))
+with open('new_yfcc2m_annos_all.json', 'w') as f:
     json.dump({'files': files}, f)
