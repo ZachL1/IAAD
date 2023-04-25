@@ -166,10 +166,10 @@ class FlickrCrawler:
         if self.cache_db is not None:
             self.update_cache_db(id_list, meta_list)
         
-    def do_crawler(self, id_list:list, save_img=True, thread_num=10, cnt_per=1000, save_json='annos.json'):
+    def do_crawler(self, id_list:list, save_img=True, thread_num=10, cnt_per=1000, save_json='annos.json', continued=False):
         # checkout if id already downloaded
         need_work_id_list = []
-        if self.cache_db is not None:
+        if continued and self.cache_db is not None:
             for img_id in id_list:
                 ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
                 if ret is not None:
