@@ -153,7 +153,7 @@ class FlickrCrawler:
 
             meta = {
                 'rgb': self.abs2rela(rgb_file),
-                'meta': self.abs2rela(rgb_file),
+                'meta': self.abs2rela(meta_file),
                 'favorites': int(photo_info['favorites']),
                 'views': int(photo_info['views']),
                 'license': int(photo_info['license']),
