@@ -28,7 +28,7 @@ class FlickrCrawler:
 
             # use sqlite3 cache for already downloaded photos
             self.cache_db = sqlite3.connect(os.path.join(save_dir, '.cache.db'))
-            self.cache_db.execute('CREATE TABLE IF NOT EXISTS downloads (photo_id text, size_label text, available integer, posted_year text, server text, secret text, PRIMARY KEY (photo_id, size_label))')
+            self.cache_db.execute('CREATE TABLE IF NOT EXISTS downloads (photo_id text, size_label text, available integer, posted_year integer, server text, secret text, favorites integer, views integer, license integer, PRIMARY KEY (photo_id, size_label))')
             self.cache_lock = Lock()
 
     def abs2rela(self, abs_path: str):
@@ -108,12 +108,15 @@ class FlickrCrawler:
     def update_cache_db(self, id_list:list, meta_list:list):
         with self.cache_lock:
             for id, meta in zip(id_list, meta_list):
-                posted_year = server = secret = None
+                posted_year = server = secret = favorites = views = license = None
                 if meta['available'] == 1:
                     posted_year = meta['posted_year']
                     server = meta['server']
                     secret = meta['secret']
-                self.cache_db.execute('INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], posted_year, server, secret))
+                    favorites = meta['favorites']
+                    views = meta['views']
+                    license = meta['license']
+                self.cache_db.execute('INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], posted_year, server, secret, favorites, views, license))
             self.cache_db.commit()
 
     def get_metadata(self, id_list:list, save_img:bool):
@@ -129,7 +132,7 @@ class FlickrCrawler:
             server = photo_info['server']
             id = photo_info['id']
             secret = photo_info['secret']
-            posted_year = time.ctime(int(photo_info['dates']['posted']))[-4:]
+            posted_year = int(time.ctime(int(photo_info['dates']['posted']))[-4:])
             rgb_file = os.path.join(self.save_dir, f'rgb/{posted_year}/{id}_{secret}_b.jpg')
             meta_file = os.path.join(self.save_dir, f'meta/{posted_year}/{server}_{id}_{secret}.pkl')
             url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
@@ -144,9 +147,20 @@ class FlickrCrawler:
             meta_list[index]['posted_year'] = posted_year
             meta_list[index]['server'] = server
             meta_list[index]['secret'] = secret
+            meta_list[index]['favorites'] = int(photo_info['favorites'])
+            meta_list[index]['views'] = int(photo_info['views'])
+            meta_list[index]['license'] = int(photo_info['license'])
+
+            meta = {
+                'rgb': self.abs2rela(rgb_file),
+                'meta': self.abs2rela(rgb_file),
+                'favorites': int(photo_info['favorites']),
+                'views': int(photo_info['views']),
+                'license': int(photo_info['license']),
+            }
             if posted_year not in sub_files.keys():
                 sub_files[posted_year] = []
-            sub_files[posted_year].append(self.abs2rela(meta_file))
+            sub_files[posted_year].append(meta)
 
         self.update_files(sub_files)
         if self.cache_db is not None:
@@ -159,11 +173,18 @@ class FlickrCrawler:
             for img_id in id_list:
                 ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
                 if ret is not None:
-                    id, size_label, available, posted_year, server, secret = ret
+                    id, size_label, available, posted_year, server, secret, favorites, views, license = ret
                     if available==1 and posted_year not in self.files.keys():
                         self.files[posted_year] = []
                     if available==1 and posted_year in self.files.keys():
-                        self.files[posted_year].append(os.path.join('meta', posted_year, f'{server}_{id}_{secret}.pkl'))
+                        meta = {
+                            'rgb': os.path.join('rgb', posted_year, f'{id}_{secret}_b.jpg'),
+                            'meta': os.path.join('meta', posted_year, f'{server}_{id}_{secret}.pkl'),
+                            'favorites': favorites,
+                            'views': views,
+                            'license': license,
+                        }
+                        self.files[posted_year].append()
                 else:
                     need_work_id_list.append(img_id)
         else:
