@@ -9,6 +9,7 @@ import sqlite3
 from threading import Lock
 # from django.core.cache import cache as dcache
 import os
+import time
 
 # os.environ['DJANGO_SETTINGS_MODULE'] = 'mysite.settings'
 
@@ -27,7 +28,7 @@ class FlickrCrawler:
 
             # use sqlite3 cache for already downloaded photos
             self.cache_db = sqlite3.connect(os.path.join(save_dir, '.cache.db'))
-            self.cache_db.execute('CREATE TABLE IF NOT EXISTS downloads (photo_id text, size_label text, available integer, taken_year text, server text, secret text, PRIMARY KEY (photo_id, size_label))')
+            self.cache_db.execute('CREATE TABLE IF NOT EXISTS downloads (photo_id text, size_label text, available integer, posted_year text, server text, secret text, PRIMARY KEY (photo_id, size_label))')
             self.cache_lock = Lock()
 
     def abs2rela(self, abs_path: str):
@@ -86,13 +87,13 @@ class FlickrCrawler:
                 f.close()
         except urllib.error.HTTPError as e:
             print('[except] when save rgb get except: ', e)
-            self.save_rgb(rgb_link, rgb_file, retry=retry-1)
+            return self.save_rgb(rgb_link, rgb_file, retry=retry-1)
         except urllib.error.URLError as e:
             print('[except] when save rgb get except: ', e)
-            self.save_rgb(rgb_link, rgb_file, retry=retry-1)
+            return self.save_rgb(rgb_link, rgb_file, retry=retry-1)
         except IOError as e:
             print('[except] when save rgb get except: ', e)
-            self.save_rgb(rgb_link, rgb_file, retry=0)
+            return self.save_rgb(rgb_link, rgb_file, retry=0)
 
         return True
     
@@ -107,12 +108,12 @@ class FlickrCrawler:
     def update_cache_db(self, id_list:list, meta_list:list):
         with self.cache_lock:
             for id, meta in zip(id_list, meta_list):
-                taken_year = server = secret = None
+                posted_year = server = secret = None
                 if meta['available'] == 1:
-                    taken_year = meta['taken_year']
+                    posted_year = meta['posted_year']
                     server = meta['server']
                     secret = meta['secret']
-                self.cache_db.execute('INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], taken_year, server, secret))
+                self.cache_db.execute('INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], posted_year, server, secret))
             self.cache_db.commit()
 
     def get_metadata(self, id_list:list, save_img:bool):
@@ -128,9 +129,9 @@ class FlickrCrawler:
             server = photo_info['server']
             id = photo_info['id']
             secret = photo_info['secret']
-            taken_year = photo_info['dates']['taken'][:4] # TODO: just str year?
-            rgb_file = os.path.join(self.save_dir, f'rgb/{taken_year}/{id}_{secret}_b.jpg')
-            meta_file = os.path.join(self.save_dir, f'meta/{taken_year}/{server}_{id}_{secret}.pkl')
+            posted_year = time.ctime(int(photo_info['dates']['posted']))[-4:]
+            rgb_file = os.path.join(self.save_dir, f'rgb/{posted_year}/{id}_{secret}_b.jpg')
+            meta_file = os.path.join(self.save_dir, f'meta/{posted_year}/{server}_{id}_{secret}.pkl')
             url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
             photo_info.update({'rgb': self.abs2rela(rgb_file)})
             photo_info.update({'url_b': url})
@@ -140,12 +141,12 @@ class FlickrCrawler:
             self.save_meta(meta_file, photo_info)
 
             meta_list[index]['available'] = 1
-            meta_list[index]['taken_year'] = taken_year
+            meta_list[index]['posted_year'] = posted_year
             meta_list[index]['server'] = server
             meta_list[index]['secret'] = secret
-            if taken_year not in sub_files.keys():
-                sub_files[taken_year] = []
-            sub_files[taken_year].append(self.abs2rela(meta_file))
+            if posted_year not in sub_files.keys():
+                sub_files[posted_year] = []
+            sub_files[posted_year].append(self.abs2rela(meta_file))
 
         self.update_files(sub_files)
         if self.cache_db is not None:
@@ -158,11 +159,11 @@ class FlickrCrawler:
             for img_id in id_list:
                 ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
                 if ret is not None:
-                    id, size_label, available, taken_year, server, secret = ret
-                    if available==1 and taken_year not in self.files.keys():
-                        self.files[taken_year] = []
-                    if available==1 and taken_year in self.files.keys():
-                        self.files[taken_year].append(os.path.join('meta', taken_year, f'{server}_{id}_{secret}.pkl'))
+                    id, size_label, available, posted_year, server, secret = ret
+                    if available==1 and posted_year not in self.files.keys():
+                        self.files[posted_year] = []
+                    if available==1 and posted_year in self.files.keys():
+                        self.files[posted_year].append(os.path.join('meta', posted_year, f'{server}_{id}_{secret}.pkl'))
                 else:
                     need_work_id_list.append(img_id)
         else:
