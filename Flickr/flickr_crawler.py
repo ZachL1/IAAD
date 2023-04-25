@@ -166,7 +166,7 @@ class FlickrCrawler:
         if self.cache_db is not None:
             self.update_cache_db(id_list, meta_list)
         
-    def do_crawler(self, id_list:list, save_img=True, thread_num=10, cnt_per=1000):
+    def do_crawler(self, id_list:list, save_img=True, thread_num=10, cnt_per=1000, save_json='annos.json'):
         # checkout if id already downloaded
         need_work_id_list = []
         if self.cache_db is not None:
@@ -194,5 +194,5 @@ class FlickrCrawler:
             for i in range(0, len(need_work_id_list), cnt_per):
                 executor.submit(self.get_metadata, need_work_id_list[i:i+cnt_per], save_img)
         
-        with open(os.path.join(self.save_dir, 'annos.json'), 'w') as f:
+        with open(os.path.join(self.save_dir, save_json), 'w') as f:
             json.dump({'files': self.files}, f)
