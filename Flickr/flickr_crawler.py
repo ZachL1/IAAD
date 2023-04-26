@@ -27,7 +27,7 @@ class FlickrCrawler:
             # self.flickr.cache = dcache 
 
             # use sqlite3 cache for already downloaded photos
-            self.cache_db = sqlite3.connect(os.path.join(save_dir, '.cache.db'))
+            self.cache_db = sqlite3.connect(os.path.join(save_dir, '.cache.db'), check_same_thread=False)
             self.cache_db.execute('CREATE TABLE IF NOT EXISTS downloads (photo_id text, size_label text, available integer, posted_year integer, server text, secret text, favorites integer, views integer, license integer, PRIMARY KEY (photo_id, size_label))')
             self.cache_lock = Lock()
 
@@ -116,7 +116,7 @@ class FlickrCrawler:
                     favorites = meta['favorites']
                     views = meta['views']
                     license = meta['license']
-                self.cache_db.execute('INSERT INTO downloads VALUES (?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], posted_year, server, secret, favorites, views, license))
+                self.cache_db.execute('INSERT OR REPLACE INTO downloads VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', (id, 'b', meta['available'], posted_year, server, secret, favorites, views, license))
             self.cache_db.commit()
 
     def get_metadata(self, id_list:list, save_img:bool):
@@ -192,6 +192,7 @@ class FlickrCrawler:
 
         with ThreadPoolExecutor(thread_num) as executor:
             for i in range(0, len(need_work_id_list), cnt_per):
+                # self.get_metadata(need_work_id_list[i:i+cnt_per], save_img)
                 executor.submit(self.get_metadata, need_work_id_list[i:i+cnt_per], save_img)
         
         with open(os.path.join(self.save_dir, save_json), 'w') as f:
