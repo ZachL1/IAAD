@@ -10,16 +10,18 @@ from threading import Lock
 # from django.core.cache import cache as dcache
 import os
 import time
+from tqdm import tqdm
 
 # os.environ['DJANGO_SETTINGS_MODULE'] = 'mysite.settings'
 
 class FlickrCrawler:
-    def __init__(self, api_key, api_secret, save_dir='./temp', cache=True):
+    def __init__(self, api_key, api_secret, save_dir='./temp', cache=True, filter_views=None):
         self.flickr = flickrapi.FlickrAPI(api_key, api_secret, format='json', cache=cache)
 
         self.save_dir = save_dir
         self.files = {}
         self.files_lock = Lock()
+        self.filter_views = filter_views
 
         self.cache_db = None
         if cache:
@@ -73,6 +75,9 @@ class FlickrCrawler:
         return photo_info
 
     def save_rgb(self, rgb_link:str, rgb_file:str, timeout=10, retry=3):
+        if os.path.exists(rgb_file):
+            return True
+        
         if retry <= 0:
             print('continue in ', rgb_link)
             return None
@@ -120,15 +125,15 @@ class FlickrCrawler:
             self.cache_db.commit()
 
     def get_metadata(self, id_list:list, save_img:bool):
-        # meta_list = [{'available':0}] * len(id_list)
+        # meta_list = [{'available':0}] * len(id_list) # bug, careful
         meta_list = [{'available':0} for i in range(len(id_list))]
 
         sub_files = {}
-        for index, id in enumerate(id_list):
+        for index, id in enumerate(tqdm(id_list)):
+            # get and save photo info meta data
             photo_info = self.get_photo_info(id)
             if photo_info is None:
                 continue
-
             server = photo_info['server']
             id = photo_info['id']
             secret = photo_info['secret']
@@ -138,11 +143,11 @@ class FlickrCrawler:
             url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
             photo_info.update({'rgb': self.abs2rela(rgb_file)})
             photo_info.update({'url_b': url})
-
-            if save_img and self.save_rgb(url, rgb_file) is None:
-                continue
+            # Note: save everything and everyone to .pkl, but just save image for filtered one
             self.save_meta(meta_file, photo_info)
 
+            # meta list for cache
+            # Note: cache everyone, but just sotre filtered in json
             meta_list[index]['available'] = 1
             meta_list[index]['posted_year'] = posted_year
             meta_list[index]['server'] = server
@@ -151,6 +156,15 @@ class FlickrCrawler:
             meta_list[index]['views'] = int(photo_info['views'])
             meta_list[index]['license'] = int(photo_info['license'])
 
+            # filter by view number
+            if (self.filter_views is not None) and (int(photo_info['views']) < self.filter_views):
+                continue
+
+            # save rgb image, just for filtered one
+            if save_img and self.save_rgb(url, rgb_file) is None:
+                continue
+
+            # simple meta data store in json
             meta = {
                 'rgb': self.abs2rela(rgb_file),
                 'meta': self.abs2rela(meta_file),
@@ -165,35 +179,47 @@ class FlickrCrawler:
         self.update_files(sub_files)
         if self.cache_db is not None:
             self.update_cache_db(id_list, meta_list)
+        print('Great work, done of 1W')
         
-    def do_crawler(self, id_list:list, save_img=True, thread_num=10, cnt_per=1000, save_json='annos.json', continued=False):
+    def do_crawler(self, id_list:list, save_img=True, thread_num=10, batch_size=1000, save_json='annos.json', continued=False):
+        # clear
+        self.files = {}
+
         # checkout if id already downloaded
         need_work_id_list = []
         if continued and self.cache_db is not None:
             for img_id in id_list:
+                # generate json by cache
                 ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
                 if ret is not None:
                     id, size_label, available, posted_year, server, secret, favorites, views, license = ret
-                    if available==1 and posted_year not in self.files.keys():
+                    # unavailable
+                    if available != 1:
+                        continue
+                    # filter by view number
+                    if (self.filter_views is not None) and (views < self.filter_views):
+                        continue
+
+                    # cache to json
+                    if posted_year not in self.files.keys():
                         self.files[posted_year] = []
-                    if available==1 and posted_year in self.files.keys():
-                        meta = {
-                            'rgb': os.path.join('rgb', posted_year, f'{id}_{secret}_b.jpg'),
-                            'meta': os.path.join('meta', posted_year, f'{server}_{id}_{secret}.pkl'),
-                            'favorites': favorites,
-                            'views': views,
-                            'license': license,
-                        }
-                        self.files[posted_year].append()
+                    meta = {
+                        'rgb': os.path.join('rgb', str(posted_year), f'{id}_{secret}_b.jpg'),
+                        'meta': os.path.join('meta', str(posted_year), f'{server}_{id}_{secret}.pkl'),
+                        'favorites': favorites,
+                        'views': views,
+                        'license': license,
+                    }
+                    self.files[posted_year].append(meta)
                 else:
                     need_work_id_list.append(img_id)
         else:
             need_work_id_list = id_list
 
         with ThreadPoolExecutor(thread_num) as executor:
-            for i in range(0, len(need_work_id_list), cnt_per):
-                # self.get_metadata(need_work_id_list[i:i+cnt_per], save_img)
-                executor.submit(self.get_metadata, need_work_id_list[i:i+cnt_per], save_img)
+            for i in range(0, len(need_work_id_list), batch_size):
+                # self.get_metadata(need_work_id_list[i:i+batch_size], save_img)
+                executor.submit(self.get_metadata, need_work_id_list[i:i+batch_size], save_img)
         
         with open(os.path.join(self.save_dir, save_json), 'w') as f:
             json.dump({'files': self.files}, f)
