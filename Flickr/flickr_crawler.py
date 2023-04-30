@@ -11,6 +11,7 @@ from threading import Lock
 import os
 import time
 from tqdm import tqdm
+import requests
 
 # os.environ['DJANGO_SETTINGS_MODULE'] = 'mysite.settings'
 
@@ -42,7 +43,10 @@ class FlickrCrawler:
     def save_meta(self, save_path:str, meta:dict):
         save_dir = os.path.dirname(save_path)
         if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
+            try:
+                os.makedirs(save_dir)
+            except:
+                self.save_meta(save_path, meta)
 
         with open(save_path, 'wb') as f:
             pickle.dump(meta, f)
@@ -69,14 +73,21 @@ class FlickrCrawler:
             photo_info.update({'favorites': fav['photo']['total']})
         except flickrapi.FlickrError as e:
             print('[except] when getInfo/Favorites get except: ', e)
-            print(f'Retry {retry} times more')
             return self.get_photo_info(id, retry-1)
+        except requests.exceptions.ConnectTimeout as e:
+            time.sleep(1)
+            print('[except] when getInfo/Favorites get except: ', e)
+            return self.get_photo_info(id, retry-1)
+        except Exception as e:
+            print('[except] when getInfo/Favorites get except: ', e)
+            return self.get_photo_info(id, retry-1)
+
 
         return photo_info
 
     def save_rgb(self, rgb_link:str, rgb_file:str, timeout=10, retry=3):
-        if os.path.exists(rgb_file):
-            return True
+        # if os.path.exists(rgb_file):
+        #     return True
         
         if retry <= 0:
             print('continue in ', rgb_link)
@@ -86,10 +97,10 @@ class FlickrCrawler:
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
 
-            r = urllib.request.urlopen(rgb_link, timeout=timeout)
-            with open(rgb_file, 'wb') as f:
-                f.write(r.read())
-                f.close()
+            with urllib.request.urlopen(rgb_link, timeout=timeout) as r:
+                with open(rgb_file, 'wb') as f:
+                    f.write(r.read())
+                    f.close()
         except urllib.error.HTTPError as e:
             print('[except] when save rgb get except: ', e)
             return self.save_rgb(rgb_link, rgb_file, retry=retry-1)
