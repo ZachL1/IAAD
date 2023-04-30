@@ -29,6 +29,8 @@ with open(yfcc15m_shuffle_list, 'r') as f:
 loop_size = 1000000
 crawler = FlickrCrawler(api_key=api_key, api_secret=api_secret, save_dir='/media/dji/data3/zach_data/yfcc15m', cache=True, filter_views=1000)
 for i in range(loop_size, len(yfcc15m_id), loop_size):
+    if i >= 2000000 and i <= 8999999:
+        continue
     yfcc_sub = yfcc15m_id[i:i+loop_size]
 
     crawler.do_crawler(yfcc_sub, save_img=True, thread_num=20, batch_size=10000, save_json=f'annos_{i}_{i+loop_size-1}_filtered.json', continued=True)

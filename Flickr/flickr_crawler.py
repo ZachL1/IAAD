@@ -125,101 +125,122 @@ class FlickrCrawler:
             self.cache_db.commit()
 
     def get_metadata(self, id_list:list, save_img:bool):
-        # meta_list = [{'available':0}] * len(id_list) # bug, careful
-        meta_list = [{'available':0} for i in range(len(id_list))]
+        try:
+            # meta_list = [{'available':0}] * len(id_list) # bug, careful
+            meta_list = [{'available':0} for i in range(len(id_list))]
 
-        sub_files = {}
-        for index, id in enumerate(tqdm(id_list)):
-            # get and save photo info meta data
-            photo_info = self.get_photo_info(id)
-            if photo_info is None:
-                continue
-            server = photo_info['server']
-            id = photo_info['id']
-            secret = photo_info['secret']
-            posted_year = int(time.ctime(int(photo_info['dates']['posted']))[-4:])
-            rgb_file = os.path.join(self.save_dir, f'rgb/{posted_year}/{id}_{secret}_b.jpg')
-            meta_file = os.path.join(self.save_dir, f'meta/{posted_year}/{server}_{id}_{secret}.pkl')
-            url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
-            photo_info.update({'rgb': self.abs2rela(rgb_file)})
-            photo_info.update({'url_b': url})
-            # Note: save everything and everyone to .pkl, but just save image for filtered one
-            self.save_meta(meta_file, photo_info)
+            sub_files = {}
+            for index, id in enumerate(tqdm(id_list)):
+                # get and save photo info meta data
+                photo_info = self.get_photo_info(id)
+                if photo_info is None:
+                    continue
+                server = photo_info['server']
+                id = photo_info['id']
+                secret = photo_info['secret']
+                posted_year = int(time.ctime(int(photo_info['dates']['posted']))[-4:])
+                rgb_file = os.path.join(self.save_dir, f'rgb/{posted_year}/{id}_{secret}_b.jpg')
+                meta_file = os.path.join(self.save_dir, f'meta/{posted_year}/{server}_{id}_{secret}.pkl')
+                url = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
+                photo_info.update({'rgb': self.abs2rela(rgb_file)})
+                photo_info.update({'url_b': url})
+                # Note: save everything and everyone to .pkl, but just save image for filtered one
+                self.save_meta(meta_file, photo_info)
 
-            # meta list for cache
-            # Note: cache everyone, but just sotre filtered in json
-            meta_list[index]['available'] = 1
-            meta_list[index]['posted_year'] = posted_year
-            meta_list[index]['server'] = server
-            meta_list[index]['secret'] = secret
-            meta_list[index]['favorites'] = int(photo_info['favorites'])
-            meta_list[index]['views'] = int(photo_info['views'])
-            meta_list[index]['license'] = int(photo_info['license'])
+                # meta list for cache
+                # Note: cache everyone, but just sotre filtered in json
+                meta_list[index]['available'] = 1
+                meta_list[index]['posted_year'] = posted_year
+                meta_list[index]['server'] = server
+                meta_list[index]['secret'] = secret
+                meta_list[index]['favorites'] = int(photo_info['favorites'])
+                meta_list[index]['views'] = int(photo_info['views'])
+                meta_list[index]['license'] = int(photo_info['license'])
 
-            # filter by view number
-            if (self.filter_views is not None) and (int(photo_info['views']) < self.filter_views):
-                continue
+                # filter by view number
+                if (self.filter_views is not None) and (int(photo_info['views']) < self.filter_views):
+                    continue
 
-            # save rgb image, just for filtered one
-            if save_img and self.save_rgb(url, rgb_file) is None:
-                continue
+                # save rgb image, just for filtered one
+                if save_img and self.save_rgb(url, rgb_file) is None:
+                    continue
 
-            # simple meta data store in json
-            meta = {
-                'rgb': self.abs2rela(rgb_file),
-                'meta': self.abs2rela(meta_file),
-                'favorites': int(photo_info['favorites']),
-                'views': int(photo_info['views']),
-                'license': int(photo_info['license']),
-            }
-            if posted_year not in sub_files.keys():
-                sub_files[posted_year] = []
-            sub_files[posted_year].append(meta)
+                # simple meta data store in json
+                meta = {
+                    'rgb': self.abs2rela(rgb_file),
+                    'meta': self.abs2rela(meta_file),
+                    'favorites': int(photo_info['favorites']),
+                    'views': int(photo_info['views']),
+                    'license': int(photo_info['license']),
+                }
+                if posted_year not in sub_files.keys():
+                    sub_files[posted_year] = []
+                sub_files[posted_year].append(meta)
 
-        self.update_files(sub_files)
-        if self.cache_db is not None:
-            self.update_cache_db(id_list, meta_list)
-        print('Great work, done of 1W')
+            self.update_files(sub_files)
+            if self.cache_db is not None:
+                self.update_cache_db(id_list, meta_list)
+            print('Great work, done of 1W')
+        except Exception as e:
+            print('[exception] in get_metadata: ', e)
+    
         
     def do_crawler(self, id_list:list, save_img=True, thread_num=10, batch_size=1000, save_json='annos.json', continued=False):
-        # clear
-        self.files = {}
+        try:
+            # clear
+            self.files = {}
 
-        # checkout if id already downloaded
-        need_work_id_list = []
-        if continued and self.cache_db is not None:
-            for img_id in id_list:
-                # generate json by cache
-                ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
-                if ret is not None:
-                    id, size_label, available, posted_year, server, secret, favorites, views, license = ret
-                    # unavailable
-                    if available != 1:
-                        continue
-                    # filter by view number
-                    if (self.filter_views is not None) and (views < self.filter_views):
-                        continue
+            # checkout if id already downloaded
+            need_work_id_list = []
+            if continued and self.cache_db is not None:
+                for img_id in id_list:
+                    # generate json by cache
+                    ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
+                    if ret is not None:
+                        id, size_label, available, posted_year, server, secret, favorites, views, license = ret
+                        # unavailable
+                        if available != 1:
+                            continue
+                        # filter by view number
+                        if (self.filter_views is not None) and (views < self.filter_views):
+                            continue
 
-                    # cache to json
-                    if posted_year not in self.files.keys():
-                        self.files[posted_year] = []
-                    meta = {
-                        'rgb': os.path.join('rgb', str(posted_year), f'{id}_{secret}_b.jpg'),
-                        'meta': os.path.join('meta', str(posted_year), f'{server}_{id}_{secret}.pkl'),
-                        'favorites': favorites,
-                        'views': views,
-                        'license': license,
-                    }
-                    self.files[posted_year].append(meta)
-                else:
-                    need_work_id_list.append(img_id)
-        else:
-            need_work_id_list = id_list
+                        # cache to json
+                        if posted_year not in self.files.keys():
+                            self.files[posted_year] = []
+                        meta = {
+                            'rgb': os.path.join('rgb', str(posted_year), f'{id}_{secret}_b.jpg'),
+                            'meta': os.path.join('meta', str(posted_year), f'{server}_{id}_{secret}.pkl'),
+                            'favorites': favorites,
+                            'views': views,
+                            'license': license,
+                        }
 
-        with ThreadPoolExecutor(thread_num) as executor:
-            for i in range(0, len(need_work_id_list), batch_size):
-                # self.get_metadata(need_work_id_list[i:i+batch_size], save_img)
-                executor.submit(self.get_metadata, need_work_id_list[i:i+batch_size], save_img)
-        
-        with open(os.path.join(self.save_dir, save_json), 'w') as f:
-            json.dump({'files': self.files}, f)
+                        # check rgb downloaded
+                        rgb_file = os.path.join(self.save_dir, meta['rgb'])
+                        if not os.path.exists(rgb_file):
+                            print('no rgb, donloading... ', rgb_file)
+                            rgb_link = f'https://live.staticflickr.com/{server}/{id}_{secret}_b.jpg'
+                            if self.save_rgb(rgb_link, rgb_file) is None:
+                                continue
+
+                        self.files[posted_year].append(meta)
+                    else:
+                        need_work_id_list.append(img_id)
+            else:
+                need_work_id_list = id_list
+
+            with ThreadPoolExecutor(thread_num) as executor:
+                for i in range(0, len(need_work_id_list), batch_size):
+                    # self.get_metadata(need_work_id_list[i:i+batch_size], save_img)
+                    executor.submit(self.get_metadata, need_work_id_list[i:i+batch_size], save_img)
+            
+            with open(os.path.join(self.save_dir, save_json), 'w') as f:
+                total = 0
+                for k,v in self.files.items():
+                    total += len(v)
+                    print(f'{k}: {len(v)}')
+                print(f'total: ', total)
+                json.dump({'files': self.files}, f)
+        except Exception as e:
+            print('[exception] in do_crawler: ', e)
