@@ -1,0 +1,68 @@
+import argparse
+import sys
+
+def convert_arg_line_to_args(arg_line):
+    for arg in arg_line.split():
+        if not arg.strip():
+            continue
+        yield str(arg)
+
+def get_args():
+    parser = argparse.ArgumentParser(description='Training script. Default values of all arguments are recommended for reproducibility', fromfile_prefix_chars='@',
+                                     conflict_handler='resolve')
+    parser.convert_arg_line_to_args = convert_arg_line_to_args
+
+    # input parameters
+    parser.add_argument('--root_dir', type=str, default='/jfs/auto.prod.sz/users/zach.duan/iaa')
+    parser.add_argument('--train_annos_file', type=str, default=None)
+    parser.add_argument('--val_annos_file', type=str, default=None)
+    parser.add_argument('--test_annos_file', type=str, default=None)
+
+    # training parameters
+    parser.add_argument('--train',action='store_true')
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--decay', action='store_true')
+    parser.add_argument('--conv_base_lr', type=float, default=5e-3)
+    parser.add_argument('--dense_lr', type=float, default=5e-4)
+    parser.add_argument('--lr_decay_rate', type=float, default=0.95)
+    parser.add_argument('--lr_decay_freq', type=int, default=10)
+    parser.add_argument('--train_batch_size', type=int, default=128)
+    parser.add_argument('--val_batch_size', type=int, default=128)
+    parser.add_argument('--test_batch_size', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--epochs', type=int, default=100)
+
+    # distributed training
+    parser.add_argument('--local_rank', default=0, type=int)
+    parser.add_argument('--distributed', action='store_true')
+    parser.add_argument('--launcher', default='none', type=str, choices=['none', 'pytorch'])
+    parser.add_argument('--gpu_ids', default=0, type=int, nargs='+')
+    # parser.add_argument('--gpu_ids', type=list, nargs='+', default=None)
+
+    # misc
+    parser.add_argument('--ckpt_path', type=str, default='./ckpts')
+    parser.add_argument('--multi_gpu', action='store_true')
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--resume_epoch', type=int, default=0)
+    parser.add_argument('--early_stopping_patience', type=int, default=10)
+    parser.add_argument('--save_fig', action='store_true')
+
+    # model
+    parser.add_argument('--model', type=str, default='nima')
+
+    # parse args
+    if sys.argv.__len__() == 2:
+        # parse from file
+        arg_filename_with_prefix = '@' + sys.argv[1]
+        args = parser.parse_args([arg_filename_with_prefix])
+    else:
+        # parse direct
+        args = parser.parse_args()
+
+    # check annotations json file
+    if args.train:
+        assert ((args.train_annos_file is not None) and (args.val_annos_file is not None)), 'train and val annos file required'
+    elif args.test:
+        assert (args.test_annos_file is not None), 'test annos file required'
+    
+    return args

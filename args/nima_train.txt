@@ -1,0 +1,13 @@
+--root_dir /jfs/auto.prod.sz/users/zach.duan/iaa/data
+--train 
+--train_annos_file /jfs/auto.prod.sz/users/zach.duan/iaa/data/AVA/annotations/AVA_train.json
+--val_annos_file /jfs/auto.prod.sz/users/zach.duan/iaa/data/AVA/annotations/AVA_val.json
+--conv_base_lr 3e-7 
+--dense_lr 3e-6 
+--decay 
+--num_workers 4
+--ckpt_path ./ckpts 
+--epochs 100 
+--early_stopping_patience 10 
+--multi_gpu 
+--gpu_ids 0 1 2 3
