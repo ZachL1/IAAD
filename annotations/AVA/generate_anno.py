@@ -4,8 +4,10 @@ import pandas as pd
 import json
 from glob import glob
 import random
+from PIL import Image
+from tqdm import tqdm
 
-base_dir = '/home/dji/IAA/data/'
+base_dir = '/home/dji/disk4/zach/iaa/data/'
 
 # all_files = []
 train_files = []
@@ -28,6 +30,13 @@ def read_tag_challenges(file_path:str) -> dict:
             tags[int(tag_id)] = tag
     return tags
 
+def check_file(file_path):
+    try:
+        image = Image.open(file_path).convert('RGB')
+    except:
+        return False
+    return True
+
 # read tags and challenges
 tags = read_tag_challenges(os.path.join(base_dir, 'AVA/data/tags.txt'))
 challenges = read_tag_challenges(os.path.join(base_dir, 'AVA/data/challenges.txt'))
@@ -42,11 +51,11 @@ test_sets = glob(os.path.join(base_dir, 'AVA/data/aesthetics_image_lists/*_test.
 
 def get_json_from_ids(id_set:list):
     files = []
-    for id in id_set:
+    for id in tqdm(id_set):
         if id not in meta_data.index:
             continue
         image_file = os.path.join(base_dir, f'AVA/data/image/{id}.jpg')
-        if not os.path.exists(image_file):
+        if (not os.path.exists(image_file)) or (not check_file(image_file)):
             continue
 
         meta = meta_data.loc[id,:].to_numpy().tolist()

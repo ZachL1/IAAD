@@ -204,7 +204,8 @@ class FlickrCrawler:
             # checkout if id already downloaded
             need_work_id_list = []
             if continued and self.cache_db is not None:
-                for img_id in id_list:
+                print('check cache if already donload...')
+                for img_id in tqdm(id_list):
                     # generate json by cache
                     ret = self.cache_db.execute('SELECT * FROM downloads WHERE photo_id=? AND size_label=?', (img_id, 'b')).fetchone()
                     if ret is not None:
