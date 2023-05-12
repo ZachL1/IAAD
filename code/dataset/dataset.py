@@ -7,8 +7,8 @@ from PIL import Image
 
 import torch
 from torch.utils import data
+from torchvision.datasets.folder import default_loader
 import torchvision.transforms as transforms
-
 
 class IAADataset(data.Dataset):
     """IAA dataset
@@ -31,12 +31,9 @@ class IAADataset(data.Dataset):
     def __getitem__(self, idx):
         idx_anno = self.annotations[idx]
         img_name = os.path.join(self.root_dir, idx_anno['image'])
-        image = Image.open(img_name).convert('RGB')
+        image = default_loader(img_name)
         ratings = np.array(idx_anno['ratings']).astype(np.float32).reshape(-1,1)
 
-        # annotations = self.annotations.iloc[idx, 1:].to_numpy()
-        # annotations = annotations.astype('float').reshape(-1, 1)
-        # sample = {'img_id': img_name, 'image': image, 'annotations': annotations}
         sample = {
             'image': image,
             'score': idx_anno['score'],
