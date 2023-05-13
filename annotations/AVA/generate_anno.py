@@ -6,12 +6,15 @@ from glob import glob
 import random
 from PIL import Image
 from tqdm import tqdm
+import warnings
+
+# warnings.filterwarnings('error')
 
 base_dir = '/home/dji/disk4/zach/iaa/data/'
 
 # all_files = []
 train_files = []
-val_files = []
+# val_files = []
 test_files = []
 
 def get_mean(ratings:list):
@@ -96,17 +99,17 @@ all_files = get_json_from_ids(meta_data.index.to_list())
 random.shuffle(all_files)
 l = len(all_files)
 train_files = all_files[:int(l*0.8)]
-val_files = all_files[int(l*0.8):int(l*0.85)]
-test_files = all_files[int(l*0.85):]
+# val_files = all_files[int(l*0.8):int(l*0.85)]
+test_files = all_files[int(l*0.8):]
 
 # save to json
 with open(f'{base_dir}AVA/annotations/AVA_train.json', 'w') as f:
     print('train_files: ', len(train_files))
     json.dump({'files': train_files}, f)
 
-with open(f'{base_dir}AVA/annotations/AVA_val.json', 'w') as f:
-    print('val_files: ', len(val_files))
-    json.dump({'files': val_files}, f)
+# with open(f'{base_dir}AVA/annotations/AVA_val.json', 'w') as f:
+#     print('val_files: ', len(val_files))
+#     json.dump({'files': val_files}, f)
 
 with open(f'{base_dir}AVA/annotations/AVA_test.json', 'w') as f:
     print('test_files: ', len(test_files))

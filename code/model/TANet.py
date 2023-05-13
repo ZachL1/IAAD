@@ -90,7 +90,7 @@ class MobileNetV2(nn.Module):
         # make it nn.Sequential
         self.features = nn.Sequential(*self.features)
 
-        # avgpool
+        #avgpool
         self.avgpool = nn.AvgPool2d(input_size // 32)
 
         # building classifier
@@ -125,17 +125,18 @@ class MobileNetV2(nn.Module):
 
 def resnet365_backbone():
     arch = 'resnet18'
+    # load the pre-trained weights
     model_file = '/jfs/auto.prod.sz/users/zach.duan/iaa/IAAD/pretrained/resnet18_places365.pth.tar'
     last_model = models.__dict__[arch](num_classes=365)
 
     checkpoint = torch.load(model_file, map_location=lambda storage, loc: storage)
     state_dict = {str.replace(k, 'module.', ''): v for k, v in checkpoint['state_dict'].items()}
     last_model.load_state_dict(state_dict)
-
     return last_model
 
 def mobile_net_v2(pretrained=False):
     model = MobileNetV2()
+
     if pretrained:
         print("read mobilenet weights")
         path_to_model = '/jfs/auto.prod.sz/users/zach.duan/iaa/IAAD/pretrained/mobilenetv2.pth.tar'
@@ -154,12 +155,12 @@ def Attention(x):
     ql2 = torch.norm(quary, dim=2, keepdim=True)
     kl2 = torch.norm(key, dim=1, keepdim=True)
     sim_map = torch.div(sim_map, torch.matmul(ql2, kl2).clamp(min=1e-8))
+
     return sim_map
 
 def MV2():
     model = mobile_net_v2()
     model = nn.Sequential(*list(model.children())[:-1])
-    # model_dict = model.state_dict()
     return model
 
 class L5(nn.Module):
@@ -167,6 +168,7 @@ class L5(nn.Module):
         super(L5, self).__init__()
         back_model = MV2()
         self.base_model = back_model
+
         self.head = nn.Sequential(
             nn.ReLU(inplace=True),
             nn.Dropout(p=0.75),
@@ -187,6 +189,8 @@ class L1(nn.Module):
 
         self.last_out_w = nn.Linear(365, 100)
         self.last_out_b = nn.Linear(365, 1)
+
+        # initialize
         for i, m_name in enumerate(self._modules):
             if i > 2:
                 nn.init.kaiming_normal_(self._modules[m_name].weight.data)
@@ -201,9 +205,10 @@ class L1(nn.Module):
 
 # L3
 class TargetNet(nn.Module):
-    def __init__(self):
-        super(TargetNet, self).__init__()
 
+    def __init__(self, emd=True):
+        super(TargetNet, self).__init__()
+        self.emd = emd
         # L2
         self.fc1 = nn.Linear(365, 100)
         for i, m_name in enumerate(self._modules):
@@ -216,20 +221,26 @@ class TargetNet(nn.Module):
         self.relu7 = nn.PReLU()
         self.relu7.cuda()
         self.sig = nn.Sigmoid()
+        if not self.emd:
+            self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x, paras):
+
         q = self.fc1(x)
+        # print(q.shape)
         q = self.bn1(q)
         q = self.relu1(q)
         q = self.drop1(q)
 
         self.lin = nn.Sequential(TargetFC(paras['res_last_out_w'], paras['res_last_out_b']))
         q = self.lin(q)
-        bn7 = nn.BatchNorm1d(q.shape[0])
-        bn7.cuda()
-        q = bn7(q)
-        q = self.relu7(q)
-
+        if self.emd:
+            bn7 = nn.BatchNorm1d(q.shape[0])
+            bn7.cuda()
+            q = bn7(q)
+            q = self.relu7(q)
+        else:
+            q = self.softmax(q)
         return q
 
 class TargetFC(nn.Module):
@@ -243,13 +254,15 @@ class TargetFC(nn.Module):
         return out
 
 class TANet(nn.Module):
-    def __init__(self):
+    def __init__(self, emd=True):
         super(TANet, self).__init__()
+        self.emd = emd
+
         self.res365_last = resnet365_backbone()
         self.hypernet = L1()
 
         # L3
-        self.tygertnet = TargetNet()
+        self.tygertnet = TargetNet(self.emd)
 
         self.avg = nn.AdaptiveAvgPool2d((10, 1))
         self.avg_RGB = nn.AdaptiveAvgPool2d((12, 12))
@@ -266,18 +279,26 @@ class TANet(nn.Module):
         )
 
         # L6
-        self.head = nn.Sequential(
-            nn.ReLU(),
-            nn.Dropout(p=0.75),
-            nn.Linear(30, 10),
-            nn.Softmax(dim=1)
-        )
+        if self.emd:
+            self.head = nn.Sequential(
+                nn.ReLU(),
+                nn.Dropout(p=0.75),
+                nn.Linear(30, 10),
+                nn.Softmax(dim=1)
+            )
+        else:
+            self.head = nn.Sequential(
+                nn.ReLU(),
+                nn.Dropout(p=0.75),
+                nn.Linear(30, 1),
+                nn.Sigmoid()
+            )
 
     def forward(self, x):
 
         x_temp = self.avg_RGB(x)
         x_temp = Attention(x_temp)
-        x_temp = x_temp.view(x_temp.size(0), -1)
+        x_temp =x_temp.view(x_temp.size(0),-1)
         x_temp = self.head_rgb(x_temp)
 
         res365_last_out = self.res365_last(x)
@@ -288,7 +309,10 @@ class TANet(nn.Module):
         x2 = self.avg(x2)
         x2 = x2.squeeze(dim=2)
 
+
         x1 = self.mobileNet(x)
-        x = torch.cat([x1, x2, x_temp], 1)
+
+        x = torch.cat([x1,x2,x_temp],1)
         x = self.head(x)
+
         return x

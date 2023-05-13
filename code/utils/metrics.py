@@ -2,6 +2,7 @@ import torch
 import numpy as np
 
 from scipy.stats import pearsonr, spearmanr
+from scipy.optimize import curve_fit
 from sklearn.metrics import accuracy_score
 
 def get_score(y_pred:torch.Tensor, device):
@@ -9,20 +10,33 @@ def get_score(y_pred:torch.Tensor, device):
     w_batch = w.repeat(y_pred.size(0), 1).unsqueeze(dim=2)
 
     score = (y_pred * w_batch).sum(dim=1).squeeze()
-    score_np = score.data.cpu().numpy()
-    return score, score_np
+    # score_np = score.data.cpu().numpy()
+    return score
 
-def get_lcc(p, gt):
-    return pearsonr(p, gt)
+def get_lcc(p, gt) -> float:
+    return pearsonr(p, gt)[0]
 
-def get_srcc(p, gt):
-    return spearmanr(p, gt)
+def get_srcc(p, gt) -> float:
+    return spearmanr(p, gt)[0]
 
-def get_acc(p, gt, threshold:float=5):
+def get_acc(p, gt, threshold:float=5) -> float:
     p_lable = np.where(np.array(p) <= threshold, 0, 1)
     gt_lable = np.where(np.array(gt) <= threshold, 0, 1)
-    return accuracy_score(gt_lable, p_lable)
+    return float(accuracy_score(gt_lable, p_lable))
 
+def get_l1(p, gt) -> float:
+    return np.mean(np.abs(p - gt))
+
+def get_l2(p, gt) -> float:
+    return np.mean(np.power((p - gt),2))
+
+def score_mapping(p, gt):
+    p, gt = np.array(p), np.array(gt)
+    def func(x, a, b, c, d, e):
+        logist = 0.5 - 1/(1+np.exp(b * (x-c)))
+        return a*logist + d*x + e
+    popt, pcov = curve_fit(func, p, gt)
+    return func(p, *popt)
 
 class AverageMeter(object):
     def __init__(self):

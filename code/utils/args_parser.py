@@ -12,11 +12,15 @@ def get_args():
                                      conflict_handler='resolve')
     parser.convert_arg_line_to_args = convert_arg_line_to_args
 
-    # input parameters
-    parser.add_argument('--root_dir', type=str, default='/jfs/auto.prod.sz/users/zach.duan/iaa')
-    parser.add_argument('--train_annos_file', type=str, default=None)
-    parser.add_argument('--val_annos_file', type=str, default=None)
-    parser.add_argument('--test_annos_file', type=str, default=None)
+    # dataset
+    parser.add_argument('--data_dir', type=str, default='./')
+    # parser.add_argument('--train_annos_file', type=str, default=None)
+    # parser.add_argument('--val_annos_file', type=str, default=None)
+    # parser.add_argument('--test_annos_file', type=str, default=None)
+    parser.add_argument('--stage', default='ava', type=str,
+                        help='training stage on different datasets')
+    parser.add_argument('--val_dataset', default=['ava'], type=str, nargs='+',
+                        help='validation datasets')
 
     # training parameters
     parser.add_argument('--train',action='store_true')
@@ -78,8 +82,6 @@ def get_args():
 
     # check annotations json file
     if args.train:
-        assert ((args.train_annos_file is not None) and (args.val_annos_file is not None)), 'train and val annos file required'
-    elif args.test:
-        assert (args.test_annos_file is not None), 'test annos file required'
+        assert (args.stage == 'ava' or args.stage == 'yfcc'), 'train stage must be ava or yfcc'
     
     return args

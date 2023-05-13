@@ -1,6 +1,7 @@
 import os
 import time
 from tqdm import tqdm
+import numpy as np
 
 import torch
 import torch.optim as optim
@@ -11,22 +12,28 @@ import torchvision.models as models
 from model.NIMA import *
 from dataset.dataset import IAADataset
 from utils.loss import emd_loss
-from utils.metrics import get_score, get_lcc, get_acc, get_srcc, BestMeteric
-from utils.logger import add_dict_scalars
+from utils.evaluate import evaluate
+from utils.metrics import BestMeteric
 
-def train(args, model, train_loader, device, optimizer, writer:SummaryWriter, epoch, ):
+def train(args, model, train_loader, device, optimizer, writer:SummaryWriter, epoch, emd=True):
     model.train()
     
     batch_losses = []
-    for i, data in enumerate(tqdm(train_loader)):
+    for i, data in enumerate(tqdm(train_loader, ncols=100, postfix=f'{epoch}/{args.epochs}epoch')):
         images = data['image'].to(device)
-        labels = data['ratings'].to(device).float()
-        outputs = model(images)
-        outputs = outputs.view(-1, 10, 1)
+        if emd:
+            labels = data['ratings'].to(device).float()
+        else:
+            labels = data['score'].to(device).float()
 
+        outputs = model(images)
         optimizer.zero_grad()
 
-        loss = emd_loss(labels, outputs, 2)
+        if emd:
+            outputs = outputs.view(-1, 10, 1)
+            loss = emd_loss(labels, outputs, 2)
+        else:
+            loss = nn.L1Loss()(labels, outputs)
         batch_losses.append(loss.item())
 
         loss.backward()
@@ -41,44 +48,6 @@ def train(args, model, train_loader, device, optimizer, writer:SummaryWriter, ep
 
     return avg_loss
 
-@torch.no_grad()
-def validate(args, model, val_loader, device, writer=None, epoch=None, test_or_valid_flag = 'val'):
-    model.eval()
-
-    batch_val_losses = []
-    true_score = []
-    pred_score = []
-    for data in tqdm(val_loader):
-        images = data['image'].to(device)
-        labels = data['ratings'].to(device).float()
-        outputs = model(images)
-        outputs = outputs.view(-1, 10, 1)
-        # score for eval metrics
-        pscore, pscore_np = get_score(outputs, device)
-        tscore, tscore_np = get_score(labels, device)
-        pred_score += pscore_np.tolist()
-        true_score += tscore_np.tolist()
-        # emd loss
-        val_loss = emd_loss(labels, outputs)
-        # val_loss = emd_loss(labels, outputs, 1)
-        batch_val_losses.append(val_loss.item())
-
-    lcc_mean = get_lcc(pred_score, true_score)
-    srcc_mean = get_srcc(pred_score, true_score)
-    acc = get_acc(pred_score, true_score)
-    avg_val_loss = sum(batch_val_losses) / len(batch_val_losses)
-    val_result = {
-        'emd_loss': avg_val_loss,
-        'acc': acc,
-        'lcc': lcc_mean[0],
-        'srcc': srcc_mean[0],
-    }
-    print(f'{test_or_valid_flag}: {val_result}')
-    if writer is not None and epoch is not None:
-        add_dict_scalars(writer, 'val', val_result, epoch+1)
-    return val_result
-
-
 def train_nima(args, device):
     ## log writer for tensorboard
     log_dir = os.path.join(args.log_dir, time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime()))
@@ -92,16 +61,16 @@ def train_nima(args, device):
         transforms.ToTensor(), 
         transforms.Normalize(mean=[0.485, 0.456, 0.406], 
             std=[0.229, 0.224, 0.225])])
-    val_transform = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.RandomCrop((224, 224)),
-        transforms.ToTensor(), 
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
-            std=[0.229, 0.224, 0.225])])
 
     ## init model
+    emd = False # Whether to train with emd loss
+    if args.stage == 'ava':
+        emd = True
     base_model = models.vgg16(pretrained=True)
-    model = NIMA(base_model).to(device)
+    if emd:
+        model = NIMA(base_model, 10, emd).to(device)
+    else:
+        model = NIMA(base_model, 1, emd).to(device)
 
     ## dataparallel for model
     if torch.cuda.device_count() > 1:
@@ -152,17 +121,26 @@ def train_nima(args, device):
     ## training
     if args.train:
         # Data loader
-        trainset = IAADataset(annos_file=args.train_annos_file, root_dir=args.root_dir, transform=train_transform)
-        valset = IAADataset(annos_file=args.val_annos_file, root_dir=args.root_dir, transform=val_transform)
-        train_loader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size, shuffle=True, 
-                                                   num_workers=args.num_workers, drop_last=True)
-        val_loader = torch.utils.data.DataLoader(valset, batch_size=args.val_batch_size, shuffle=False, 
-                                                 num_workers=args.num_workers, drop_last=True)
+        if args.stage == 'ava':
+            trainset = IAADataset(annos_file=os.path.join(args.data_dir, 'AVA/annotations/AVA_train.json'), 
+                                 data_dir=args.data_dir, 
+                                 ratings=True,
+                                 transform=train_transform)
+        elif args.stage == 'yfcc':
+            trainset = IAADataset(annos_file=os.path.join(args.data_dir, 'YFCC1M/annotations/YFCC1M_train.json'), 
+                                 data_dir=args.data_dir, 
+                                 transform=train_transform)
+        train_loader = torch.utils.data.DataLoader(trainset, 
+                                                   batch_size=args.batch_size, 
+                                                   shuffle=True, 
+                                                   num_workers=args.num_workers, 
+                                                   drop_last=True)
         
         # training loop
         while epoch < args.epochs:
-            train_loss = train(args, model, train_loader, device, optimizer, writer, epoch)
-            val_result = validate(args, model, val_loader, device, writer, epoch)
+            train_loss = train(args, model, train_loader, device, optimizer, writer, epoch, emd)
+            val_result = evaluate(args, model, device, writer, epoch, emd)
+            
             print(f'Epoch {epoch} completed.')
 
             # Use early stopping to monitor training
@@ -203,7 +181,7 @@ def train_nima(args, device):
         model.eval()
         # compute mean score
         test_transform = val_transform
-        testset = IAADataset(annos_file=args.test_annos_file, root_dir=args.root_dir, transform=test_transform)
+        testset = IAADataset(annos_file=args.test_annos_file, data_dir=args.data_dir, transform=test_transform)
         test_loader = torch.utils.data.DataLoader(testset, batch_size=args.test_batch_size, shuffle=False, 
                                                   num_workers=args.num_workers, drop_last=True)
 
