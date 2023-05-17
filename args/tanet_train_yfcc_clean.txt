@@ -1,0 +1,16 @@
+--data_dir /home/dji/disk4/zach/iaa/data/
+--train 
+--stage yfcc_clean
+--val_dataset ava aadb eva flickr-aes tad66k para yfcc1m_clean
+--batch_size 128
+--val_batch_size 128
+--conv_base_lr 3e-7 
+--dense_lr 3e-6 
+--decay 
+--num_workers 8
+--ckpt_path ./ckpts/TANet_yfcc_clean
+--epochs 200
+--early_stopping_patience 10
+--use_gpus 6,7
+--log_dir ./logs/TANet
+--model tanet

@@ -1,7 +1,6 @@
 import os
 import time
 from tqdm import tqdm
-import numpy as np
 
 import torch
 import torch.optim as optim
@@ -9,44 +8,12 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision.transforms as transforms
 import torchvision.models as models
 
-from model.NIMA import *
+from model.NIMA import NIMA
 from dataset.dataset import IAADataset
 from utils.loss import emd_loss
-from utils.evaluate import evaluate
+from utils.evaluate import evaluate, train
 from utils.metrics import BestMeteric
 
-def train(args, model, train_loader, device, optimizer, writer:SummaryWriter, epoch, emd=True):
-    model.train()
-    
-    batch_losses = []
-    for i, data in enumerate(tqdm(train_loader, ncols=100, postfix=f'{epoch}/{args.epochs}epoch')):
-        images = data['image'].to(device)
-        if emd:
-            labels = data['ratings'].to(device).float()
-        else:
-            labels = data['score'].to(device).float()
-
-        outputs = model(images)
-        optimizer.zero_grad()
-
-        if emd:
-            outputs = outputs.view(-1, 10, 1)
-            loss = emd_loss(labels, outputs, 2)
-        else:
-            loss = nn.L1Loss()(labels, outputs)
-        batch_losses.append(loss.item())
-
-        loss.backward()
-        optimizer.step()
-
-        print('Epoch: %d/%d | Step: %d/%d | Training EMD loss: %.4f' % (epoch + 1, args.epochs, i + 1, len(train_loader), loss))
-        writer.add_scalar('train/emd_loss', loss, i + epoch * len(train_loader))
-
-    avg_loss = sum(batch_losses) / len(batch_losses)
-    print('Epoch %d mean training EMD loss: %.4f' % (epoch + 1, avg_loss))
-    writer.add_scalar('train/epoch_emd_loss', avg_loss, epoch+1)
-
-    return avg_loss
 
 def train_nima(args, device):
     ## log writer for tensorboard
@@ -127,7 +94,11 @@ def train_nima(args, device):
                                  ratings=True,
                                  transform=train_transform)
         elif args.stage == 'yfcc':
-            trainset = IAADataset(annos_file=os.path.join(args.data_dir, 'YFCC1M/annotations/YFCC1M_train.json'), 
+            trainset = IAADataset(annos_file=os.path.join(args.data_dir, 'YFCC15M/annotations/YFCC15M_train.json'), 
+                                 data_dir=args.data_dir, 
+                                 transform=train_transform)
+        elif args.stage == 'yfcc_clean':
+            trainset = IAADataset(annos_file=os.path.join(args.data_dir, 'YFCC15M/annotations/YFCC15M_clean_train.json'), 
                                  data_dir=args.data_dir, 
                                  transform=train_transform)
         train_loader = torch.utils.data.DataLoader(trainset, 

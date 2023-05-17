@@ -35,7 +35,10 @@ def score_mapping(p, gt):
     def func(x, a, b, c, d, e):
         logist = 0.5 - 1/(1+np.exp(b * (x-c)))
         return a*logist + d*x + e
-    popt, pcov = curve_fit(func, p, gt)
+    try:
+        popt, pcov = curve_fit(func, p, gt)
+    except RuntimeError:
+        return None
     return func(p, *popt)
 
 class AverageMeter(object):

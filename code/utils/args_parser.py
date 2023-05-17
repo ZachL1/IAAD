@@ -82,6 +82,12 @@ def get_args():
 
     # check annotations json file
     if args.train:
-        assert (args.stage == 'ava' or args.stage == 'yfcc'), 'train stage must be ava or yfcc'
-    
+        assert (args.stage == 'ava' or args.stage == 'yfcc' or args.stage == 'yfcc_clean'), 'train stage must be ava or yfcc or yfcc_clean'
+    if args.stage == 'ava':
+        assert ('ava' in args.val_dataset), 'ava must in val_dataset'
+    elif args.stage == 'yfcc':
+        assert ('yfcc1m' in args.val_dataset), 'yfcc1m must in val_dataset'
+    elif args.stage == 'yfcc_clean':
+        assert ('yfcc1m_clean' in args.val_dataset), 'yfcc1m_clean must in val_dataset'
+
     return args
