@@ -8,8 +8,9 @@
 --dense_lr 1e-3 
 --decay 
 --num_workers 8
---ckpt_path ./ckpts/NIMA
+--ckpt_path ./ckpts/NIMA_ava
+--resume ./ckpts/NIMA_ava/
 --epochs 200 
 --early_stopping_patience 20
---use_gpus 0,1
+--use_gpus 0
 --log_dir ./logs/NIMA

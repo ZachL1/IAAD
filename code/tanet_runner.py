@@ -1,6 +1,7 @@
 import os
 import time
 from tqdm import tqdm
+from functools import cmp_to_key
 
 import torch
 import torch.optim as optim
@@ -11,6 +12,7 @@ import torchvision.models as models
 from dataset.dataset import IAADataset
 from model.TANet import TANet
 from utils.loss import emd_loss
+from utils.utils import sort_ckpts, save_ckpt
 from utils.evaluate import evaluate, train
 from utils.metrics import BestMeteric, AverageMeter
 
@@ -68,6 +70,9 @@ def train_tanet(args, device, use_nni=False):
 
     ## resume model and optimizer if you wangt
     if args.resume:
+        if os.path.isdir(args.resume):
+            ckpt_files = sorted(os.listdir(args.resume), key=cmp_to_key(sort_ckpts))
+            args.resume = os.path.join(args.resume, ckpt_files[-1])
         print('Load checkpoint: %s' % args.resume)
 
         # loc = 'cuda:{}'.format(args.local_rank) if torch.cuda.is_available() else 'cpu'
@@ -78,9 +83,9 @@ def train_tanet(args, device, use_nni=False):
         if 'optimizer' in checkpoint and 'epoch' in checkpoint and not args.no_resume_optimizer:
             print('Load optimizer')
             optimizer.load_state_dict(checkpoint['optimizer'])
-            epoch = checkpoint['epoch']
+            epoch = checkpoint['epoch']+1
             best_metrics = checkpoint['best_metrics']
-        print('Successfully loaded model epoch-%d.pth' % args.resume_epoch)
+        print('Successfully loaded model epoch-%d.pth' % epoch)
 
     ## Calculation parameters
     param_num = 0
@@ -126,17 +131,7 @@ def train_tanet(args, device, use_nni=False):
             # Use early stopping to monitor training
             if best_metrics.update(val_result):
                 # save model weights if val loss decreases
-                save_path = os.path.join(args.ckpt_path, 'epoch-%d.pth' % (epoch + 1))
-                print('Saving model to ', save_path)
-                if not os.path.exists(args.ckpt_path):
-                    os.makedirs(args.ckpt_path)
-                torch.save({
-                    'model': model_without_ddp.state_dict(), 
-                    'optimizer': optimizer.state_dict(),
-                    'epoch': epoch,
-                    'best_metrics': best_metrics,
-                }, save_path)
-                print('Done.\n')
+                save_ckpt(args, model_without_ddp, optimizer, epoch, best_metrics)
             if best_metrics.best_times() >= args.early_stopping_patience:
                 print('Val EMD loss has not decreased in %d epochs. Training terminated.' % args.early_stopping_patience)
                 break

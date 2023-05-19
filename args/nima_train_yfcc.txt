@@ -9,6 +9,7 @@
 --decay 
 --num_workers 8
 --ckpt_path ./ckpts/NIMA_yfcc_all
+--resume ./ckpts/NIMA_yfcc_all/
 --epochs 200 
 --early_stopping_patience 10
 --use_gpus 0,1
