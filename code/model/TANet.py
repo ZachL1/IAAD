@@ -126,7 +126,7 @@ class MobileNetV2(nn.Module):
 def resnet365_backbone():
     arch = 'resnet18'
     # load the pre-trained weights
-    model_file = '/jfs/auto.prod.sz/users/zach.duan/iaa/IAAD/pretrained/resnet18_places365.pth.tar'
+    model_file = 'pretrained/resnet18_places365.pth.tar'
     last_model = models.__dict__[arch](num_classes=365)
 
     checkpoint = torch.load(model_file, map_location=lambda storage, loc: storage)
@@ -139,7 +139,7 @@ def mobile_net_v2(pretrained=False):
 
     if pretrained:
         print("read mobilenet weights")
-        path_to_model = '/jfs/auto.prod.sz/users/zach.duan/iaa/IAAD/pretrained/mobilenetv2.pth.tar'
+        path_to_model = 'pretrained/mobilenetv2.pth.tar'
         state_dict = torch.load(path_to_model, map_location=lambda storage, loc: storage)
         model.load_state_dict(state_dict)
     return model
