@@ -10,7 +10,7 @@ basedir = './ckpts/'
 for exp in os.listdir(basedir):
     exp_dir = os.path.join(basedir, exp)
     ckpt_files = sorted(os.listdir(exp_dir), key=cmp_to_key(sort_ckpts))
-    for ckpt_file in ckpt_files[:-10]:
+    for ckpt_file in ckpt_files[:-15]:
         cmd = f'rm -f {os.path.join(exp_dir, ckpt_file)}'
         os.system(cmd)
      
