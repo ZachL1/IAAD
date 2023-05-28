@@ -1,0 +1,18 @@
+--data_dir /root/autodl-tmp/data/
+--train 
+--stage ava
+--val_dataset ava aadb eva flickr-aes tad66k para
+--batch_size 80
+--val_batch_size 80
+--conv_base_lr 3e-7 
+--dense_lr 3e-6 
+--decay 
+--num_workers 8
+--ckpt_path ./ckpts/TANet_yfcc_ava
+--resume ./ckpts/TANet_yfcc_all/
+--epochs 200
+--early_stopping_patience 20
+--use_gpus 0
+--log_dir ./logs/TANet
+--model tanet
+--no_resume_optimizer

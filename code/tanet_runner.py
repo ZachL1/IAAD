@@ -79,7 +79,15 @@ def train_tanet(args, device, use_nni=False):
         # checkpoint = torch.load(args.resume, map_location=loc)
         checkpoint = torch.load(args.resume)
 
-        model_without_ddp.load_state_dict(checkpoint['model'], strict=args.strict_resume)
+        if args.stage == 'ava':
+            model_dict = model_without_ddp.state_dict()
+            # just for backbone
+            # state_dict = {k:v for k,v in checkpoint['model'].items() if (k.find('res365_last')!=-1 or k.find('mobileNet.base_model')!=-1)}
+            state_dict = {k:v for k,v in checkpoint['model'].items() if (k[:5]!='head.')}
+            model_dict.update(state_dict)
+            model_without_ddp.load_state_dict(model_dict, strict=args.strict_resume)
+        else:
+            model_without_ddp.load_state_dict(checkpoint['model'], strict=args.strict_resume)
         if 'optimizer' in checkpoint and 'epoch' in checkpoint and not args.no_resume_optimizer:
             print('Load optimizer')
             optimizer.load_state_dict(checkpoint['optimizer'])
